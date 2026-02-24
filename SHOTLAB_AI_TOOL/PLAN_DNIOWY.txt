@@ -1,0 +1,143 @@
+# SHOTLAB AI TOOL – plan dzień po dniu (dla Cursora i użytkownika)
+
+Cel: wdrożenie aplikacji z backendem, logowaniem, subskrypcjami i Stripe.
+Kontekst: ARCHITECTURE.md w tym katalogu; frontend w nadrzędnym projekcie "AI Tool".
+
+---
+DZIEŃ 1 – Backend szkielet i środowisko
+---
+Dla agenta (Cursor):
+- W katalogu SHOTLAB_AI_TOOL utworzyć projekt backendu: Node.js + Express + TypeScript (np. folder backend/ lub shotlab-backend/).
+- Skonfigurować package.json, tsconfig, skrypty build/dev. Dodać zależności: express, cors, dotenv, typescript, @types/node, @types/express. Opcjonalnie: ts-node-dev lub nodemon.
+- Dodać plik .env.example z zmiennymi: API_KEY (Google), JWT_SECRET, DATABASE_URL, FRONTEND_URL, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET.
+- Zaimplementować serwer Express: wczytanie env, CORS (origin z FRONTEND_URL), middleware JSON. Endpoint GET /health zwracający { ok: true }.
+- Upewnić się, że "npm run dev" uruchamia serwer (np. na porcie 3001) i GET /health działa.
+
+Dla użytkownika:
+- Założenie konta / wybór hostingu pod backend (opcjonalnie już dziś).
+- Po zakończeniu: uruchomienie "npm run dev" w folderze backendu i sprawdzenie w przeglądarce/Postmanie GET http://localhost:3001/health.
+
+---
+DZIEŃ 2 – Baza danych i modele
+---
+Dla agenta (Cursor):
+- Wybrać i udokumentować DB: PostgreSQL (np. Supabase/Neon) lub MySQL. W .env.example jest DATABASE_URL.
+- Dodać ORM lub query builder (np. Prisma, Drizzle lub pg + SQL). Zalecane: Prisma dla prostoty.
+- Zdefiniować schemat: User (id, email, passwordHash, createdAt), Subscription (id, userId, stripeCustomerId, stripeSubscriptionId, planId, status, currentPeriodEnd, createdAt, updatedAt). Opcjonalnie: Usage (userId, periodStart, periodEnd, imagesCount, reelsCount).
+- Utworzyć migrację inicjalizującą tabele. Skrypt w package.json: "db:migrate" / "prisma migrate dev".
+- W backendzie: moduł łączący z DB (np. PrismaClient singleton), wywołanie w /health sprawdzające połączenie (optional).
+
+Dla użytkownika:
+- Założenie bazy (np. darmowy projekt na Supabase/Neon) i skopiowanie DATABASE_URL do .env.
+- Uruchomienie migracji (npm run db:migrate lub odpowiednik). Sprawdzenie w panelu DB, czy tabele się pojawiły.
+
+---
+DZIEŃ 3 – Rejestracja i logowanie (Auth)
+---
+Dla agenta (Cursor):
+- Endpoint POST /api/auth/register: body { email, password }. Walidacja (format email, długość hasła). Hash hasła (bcrypt lub argon2). Zapis User w DB. Zwrot: { user: { id, email }, token } lub tylko 201. Nie zwracać passwordHash.
+- Endpoint POST /api/auth/login: body { email, password }. Znajdź użytkownika, porównaj hasło z hashem. Jeśli OK: wygeneruj JWT (z payload userId, email), zwróć { user: { id, email }, token }.
+- JWT: podpis JWT_SECRET, rozsądny czas życia (np. 7d lub 24h + refresh). W .env.example JWT_SECRET.
+- Endpoint GET /api/auth/me: nagłówek Authorization: Bearer <token>. Weryfikacja JWT, odczyt userId, pobranie user z DB, zwrot { id, email } (bez hasła).
+- Middleware auth: funkcja która z requestu wyciąga token, weryfikuje JWT, ustawia req.userId (i opcjonalnie req.user). Użyć w /api/auth/me.
+- Dodać w README lub ARCHITECTURE krótki opis endpointów auth (dla frontendu).
+
+Dla użytkownika:
+- Test w Postmanie/curl: rejestracja, logowanie, GET /api/auth/me z tokenem. Sprawdzenie w DB, czy użytkownik się zapisał.
+
+---
+DZIEŃ 4 – Proxy AI: generowanie obrazu i usuwanie tła
+---
+Dla agenta (Cursor):
+- Przenieść logikę z projektu "AI Tool": services/geminiService.ts (funkcje generateImage, removeBackground) do backendu. Klucz Google z process.env.API_KEY (tylko serwer).
+- Endpoint POST /api/generate-image: chroniony middlewarem auth. Body: prompt, mode, aspectRatio, productImageBase64 (opcjonalnie), enhancements, imageSize. Wywołanie wewnętrznej funkcji generateImage (analogicznej do geminiService). Zwrot: { url } lub { imageBase64 } (spójnie z obecnym frontendem).
+- Endpoint POST /api/remove-background: chroniony auth. Body: imageBase64. Wywołanie removeBackground. Zwrot: { imageBase64 }.
+- Obsługa błędów (np. 400 przy złych parametrach, 502 przy błędzie z Gemini). Ograniczenie rozmiaru body (np. limit dla base64).
+- W .env użytkownika musi być ustawione API_KEY (klucz Google AI).
+
+Dla użytkownika:
+- Ustawienie API_KEY w .env backendu. Test endpointów z tokenem (np. z Dnia 3): remove-background i generate-image z przykładowym obrazem/promptem. Sprawdzenie czy zwracany jest obraz.
+
+---
+DZIEŃ 5 – Proxy AI: generowanie reels (Veo)
+---
+Dla agenta (Cursor):
+- Przenieść logikę z "AI Tool": services/veoService.ts (generateReel) do backendu. Użyć env API_KEY.
+- Endpoint POST /api/generate-reel: chroniony auth. Body: prompt, firstFrameImageBase64 (opcjonalnie). Długie operacje – rozważyć timeout (np. 2–3 min). Zwrot: URL do wideo lub base64/buffer (np. jako multipart lub base64 w JSON). Dokumentować w kodzie/README.
+- Obsługa błędów i limit rozmiaru body. Spójność z tym, co frontend będzie oczekiwał (np. URL lub blob URL po stronie klienta – wtedy backend może zwrócić base64 i frontend zrobi blob).
+
+Dla użytkownika:
+- Test POST /api/generate-reel z tokenem (krótki prompt). Sprawdzenie czy odpowiedź zawiera wideo (może być długi czas oczekiwania).
+
+---
+DZIEŃ 6 – Frontend: przejście na API i logowanie
+---
+Dla agenta (Cursor):
+- W projekcie "AI Tool" (frontend): dodać zmienną środowiskową VITE_API_URL (np. http://localhost:3001). Utworzyć moduł api/client (np. axios lub fetch) z baseURL i wstawianiem Authorization: Bearer <token> z przechowywanego tokena (np. useState + localStorage lub tylko memory – do ustalenia).
+- Usunąć bezpośrednie wywołania generateImage i removeBackground z geminiService; zamiast tego wywoływać POST /api/generate-image i POST /api/remove-background przez api client. To samo dla reels: wywołanie POST /api/generate-reel zamiast veoService. Dostosować format odpowiedzi (np. url vs imageBase64) po stronie frontendu.
+- Dodać ekrany: Logowanie (email, hasło), Rejestracja (email, hasło). Po sukcesie zapisać token i użytkownika (np. context lub state), przekierować do głównej aplikacji.
+- Zabezpieczenie: jeśli nie ma tokena, pokazać logowanie lub przekierować na /login. Na głównej stronie przycisk "Wyloguj" i ewentualnie wyświetlenie emaila.
+- Nie usuwać starych plików geminiService/veoService z frontendu od razu – można zostawić jako referencję lub usunąć po testach.
+
+Dla użytkownika:
+- Uruchomienie frontendu (npm run dev) i backendu. Rejestracja, logowanie, wykonanie generacji obrazu i (opcjonalnie) reela z poziomu UI. Sprawdzenie że nie ma wywołań z przeglądarki bezpośrednio do Google (DevTools → Network).
+
+---
+DZIEŃ 7 – Stripe: produkty, Checkout, webhook
+---
+Dla agenta (Cursor):
+- W Stripe (dashboard): utworzyć produkt "Shotlab AI Tool" i ceny (np. Pro miesięcznie, Pro rocznie). Identyfikatory price_... wpisać w .env (np. STRIPE_PRICE_PRO_MONTHLY).
+- W backendzie: endpoint POST /api/create-checkout-session. Chroniony auth. Body: { priceId } lub { planId } (mapowanie na priceId). Pobierz userId z req. Jeśli użytkownik ma stripeCustomerId w Subscription – użyj, inaczej utwórz Stripe Customer (email z user). Utwórz Checkout Session (mode: subscription, success_url, cancel_url, client_reference_id: userId). Zwróć { url: session.url }.
+- Endpoint POST /api/webhooks/stripe: surowy body (express.raw), weryfikacja podpisu Stripe (STRIPE_WEBHOOK_SECRET). Obsługa zdarzeń: customer.subscription.created, customer.subscription.updated, customer.subscription.deleted (oraz ewent. invoice.paid). Aktualizacja lub utworzenie rekordu Subscription w DB (userId, stripeCustomerId, stripeSubscriptionId, status, currentPeriodEnd). Nie zwracać 404 – Stripe retry.
+- W .env.example: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_PRO_MONTHLY (i inne price id). README: jak pobrać webhook secret (stripe listen) i skonfigurować endpoint w Stripe Dashboard.
+
+Dla użytkownika:
+- Konto Stripe, utworzenie produktu/cen (jeśli agent nie ma dostępu). Ustawienie STRIPE_SECRET_KEY i STRIPE_WEBHOOK_SECRET w .env. Lokalny test: "stripe listen --forward-to localhost:3001/api/webhooks/stripe", rejestracja webhooka w Stripe. Test płatności (karta testowa) i sprawdzenie w DB czy Subscription się zapisuje.
+
+---
+DZIEŃ 8 – Limity subskrypcji i endpoint /api/subscription
+---
+Dla agenta (Cursor):
+- Endpoint GET /api/subscription: chroniony auth. Zwraca aktualny plan użytkownika (z tabeli Subscription lub domyślnie "free"): { planId, status, currentPeriodEnd, limits? }. Limity można zdefiniować w kodzie (np. free: 10 obrazów/mies., pro: 100, business: 500).
+- Przed wywołaniem Gemini/Veo w endpointach /api/generate-image, /api/remove-background, /api/generate-reel: odczytać plan i usage (jeśli tabela Usage istnieje). Jeśli limit przekroczony – zwrócić 403 z komunikatem. Po udanej generacji: zwiększyć licznik usage (np. imagesCount lub reelsCount) dla bieżącego okresu.
+- Tabela Usage: okres np. miesięczny (periodStart/periodEnd). Przy pierwszym użyciu w okresie utworzyć wiersz; przy kolejnych – update counts.
+
+Dla użytkownika:
+- Sprawdzenie: użytkownik free po przekroczeniu limitu dostaje 403. Po "zakupie" subskrypcji (test Stripe) limit się podnosi. Opcjonalnie w UI pokazać "X/10 generacji w tym miesiącu".
+
+---
+DZIEŃ 9 – Frontend: cennik, przycisk Kup, mój plan
+---
+Dla agenta (Cursor):
+- Strona lub sekcja "Cennik": lista planów (Free, Pro, Business) z opisem i przyciskiem "Kup" (dla płatnych). Przycisk wywołuje POST /api/create-checkout-session z wybranym planId/priceId, otrzymuje url i przekierowuje window.location.href = url.
+- Po powrocie z Stripe (success_url): strona "Dziękujemy" lub automatyczne odświeżenie danych subskrypcji (GET /api/subscription) i przekierowanie do aplikacji. Wyświetlenie aktualnego planu w navbar lub w "Konto" (np. "Plan: Pro do 2025-03-01").
+- Link "Zarządzaj subskrypcją": backend endpoint GET /api/create-portal-session (Stripe Customer Portal). Zwraca { url }. Frontend otwiera url w nowej karcie. Opcjonalnie pokazać ten link tylko gdy status === 'active'.
+
+Dla użytkownika:
+- Przeprowadzenie pełnego flow: wybór planu → Checkout → płatność testowa → powrót do app → sprawdzenie że plan się zaktualizował. Klik "Zarządzaj subskrypcją" i sprawdzenie portalu Stripe.
+
+---
+DZIEŃ 10 – Deployment
+---
+Dla agenta (Cursor):
+- Backend: wybrana platforma (np. Railway, Render, Fly.io). Instrukcje: build (npm run build), start (node dist/index.js lub podobnie), zmienne env (API_KEY, DATABASE_URL, JWT_SECRET, FRONTEND_URL, STRIPE_*, STRIPE_WEBHOOK_SECRET). Dla webhooka Stripe ustawić w Dashboard URL produkcyjny: https://api.twoja-domena.com/api/webhooks/stripe.
+- Frontend: build (npm run build w "AI Tool"), hostowanie (Vercel/Netlify lub ten sam serwer). VITE_API_URL ustawione na produkcyjny URL API (np. https://api.shotlab.com).
+- CORS na backendzie: FRONTEND_URL = produkcyjny URL frontendu (np. https://app.shotlab.com). Opcjonalnie dodać obsługę credentials/cookies jeśli używane.
+- README lub DEPLOYMENT.md: checklist (env, webhook URL, domena, SSL). SSL zwykle przez platformę (Vercel/Netlify/Railway) lub Let's Encrypt.
+
+Dla użytkownika:
+- Założenie konta na wybranym hostingu, utworzenie projektu, ustawienie zmiennych środowiskowych. Deploy backendu i frontendu. W Stripe ustawienie webhooka na produkcyjny URL. Test: rejestracja, logowanie, generacja, subskrypcja na produkcji. Wykupienie domeny i podpięcie (opcjonalnie Dzień 10+).
+
+---
+PODSUMOWANIE ROLI UŻYTKOWNIKA
+---
+- Dostarczenie kluczy i kont: Google API_KEY, Stripe (klucze, produkty/ceny), baza danych (DATABASE_URL), ewentualnie domena.
+- Testy po każdym dniu: health, auth, generacja, płatność, deployment.
+- Decyzje produktowe: nazwy planów, limity (np. 10/100/500), ceny w Stripe.
+
+---
+PODSUMOWANIE DLA AGENTA (CURSOR)
+---
+- Każdy dzień = jeden blok zadań. Realizować w kolejności; odwoływać się do ARCHITECTURE.md przy wątpliwościach.
+- Nie zmieniać tego pliku bez uzgodnienia z użytkownikiem.
+- Po zakończeniu dnia: krótko podsumować co zrobiono i co użytkownik ma przetestować.

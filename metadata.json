@@ -1,0 +1,5 @@
+{
+  "name": "Shotlab AI Tool",
+  "description": "Profesjonalne studio aranżacji produktów wykorzystujące Gemini Nano Banana. Generuj tła i osadzaj produkty w fotorealistycznych sceneriach.",
+  "requestFramePermissions": []
+}
