@@ -1,7 +1,18 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { generateImage } from './services/geminiService';
 import { generateReel } from './services/veoService';
+import {
+  isApiConfigured,
+  getStoredToken,
+  clearStoredToken,
+  fetchUsage,
+  apiGenerateImage,
+  apiGenerateReel,
+  apiRemoveBackground,
+  type Usage,
+} from './services/apiClient';
 import { getReelUsageToday, incrementReelUsage, canGenerateReel } from './utils/reelLimit';
+import { supabase } from './lib/supabase';
 import { AppMode, AppTab, GeneratedImage, EnhancementOptions, ImageResolution } from './types';
 import { STYLES } from './data/styles';
 import { ASPECT_RATIOS } from './data/aspectRatios';
@@ -44,6 +55,28 @@ const App: React.FC = () => {
   const [salonCategoryOpen, setSalonCategoryOpen] = useState(true);
   const [kidsCategoryOpen, setKidsCategoryOpen] = useState(true);
   const [doNotModifyProduct, setDoNotModifyProduct] = useState(true);
+  const [apiUsage, setApiUsage] = useState<Usage | null>(null);
+
+  const useApi = isApiConfigured() && Boolean(getStoredToken());
+
+  useEffect(() => {
+    if (!useApi) return;
+    let cancelled = false;
+    fetchUsage()
+      .then((u) => { if (!cancelled) setApiUsage(u); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [useApi]);
+
+  const refreshUsage = () => {
+    if (useApi) fetchUsage().then(setApiUsage).catch(() => {});
+  };
+
+  const handleLogout = async () => {
+    clearStoredToken();
+    await supabase?.auth.signOut();
+    window.location.reload();
+  };
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const productNameInputRef = useRef<HTMLInputElement>(null);
@@ -102,14 +135,22 @@ const App: React.FC = () => {
 
       const promises = tasks.map(async (task) => {
         try {
-          const url = await generateImage(
-            effectivePrompt,
-            AppMode.PRODUCT_PLACEMENT,
-            task.ratio,
-            productImages[task.variantIndex],
-            enhancements,
-            resolution
-          );
+          const url = useApi
+            ? await apiGenerateImage({
+                prompt: effectivePrompt,
+                aspectRatio: task.ratio,
+                productImageBase64: productImages[task.variantIndex],
+                enhancements,
+                imageSize: resolution,
+              })
+            : await generateImage(
+                effectivePrompt,
+                AppMode.PRODUCT_PLACEMENT,
+                task.ratio,
+                productImages[task.variantIndex],
+                enhancements,
+                resolution
+              );
           return { status: 'fulfilled' as const, value: url, ...task };
         } catch (error) {
           return { status: 'rejected' as const, reason: error, ...task };
@@ -147,18 +188,22 @@ const App: React.FC = () => {
       if (successfulImages.length > 0) {
         setHistory(prev => [...successfulImages, ...prev]);
         setCurrentImage(firstSuccess);
+        if (useApi) refreshUsage();
         
         // Scroll to result
         setTimeout(() => {
           scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
       } else {
-        throw new Error("Wszystkie generacje zakończyły się niepowodzeniem.");
+        const firstRejection = results.find((r): r is { status: 'rejected'; reason: unknown } => r.status === 'rejected');
+        const msg = firstRejection?.reason instanceof Error ? firstRejection.reason.message : "Wszystkie generacje zakończyły się niepowodzeniem.";
+        throw new Error(msg);
       }
 
     } catch (error) {
       console.error(error);
-      alert("Wystąpił błąd podczas generowania. Sprawdź konsolę lub spróbuj ponownie.");
+      const msg = error instanceof Error ? error.message : "Wystąpił błąd podczas generowania. Sprawdź konsolę lub spróbuj ponownie.";
+      alert(msg);
     } finally {
       setIsGenerating(false);
     }
@@ -221,7 +266,16 @@ const App: React.FC = () => {
       alert("Proszę wybrać preset lub wpisać opis sceny do rolki.");
       return;
     }
-    if (!canGenerateReel()) {
+    if (useApi && apiUsage) {
+      if (apiUsage.trialEnded) {
+        alert("Your 7-day trial has ended.");
+        return;
+      }
+      if (apiUsage.reelsUsed >= apiUsage.reelsLimit) {
+        alert("Daily reel limit reached. Try again tomorrow.");
+        return;
+      }
+    } else if (!useApi && !canGenerateReel()) {
       alert("Dzienny limit rolek (3) został wykorzystany. Spróbuj jutro.");
       return;
     }
@@ -229,18 +283,24 @@ const App: React.FC = () => {
     setReelVideoUrl(null);
     try {
       const firstFrame = reelSourceImage?.url ?? (useFirstFrameForReel ? (currentImage?.url ?? productImages[0]) : null);
-      const url = await generateReel(reelPrompt.trim(), firstFrame ?? undefined);
+      const url = useApi
+        ? await apiGenerateReel(reelPrompt.trim(), firstFrame ?? undefined)
+        : await generateReel(reelPrompt.trim(), firstFrame ?? undefined);
       setReelVideoUrl(url);
-      incrementReelUsage();
+      if (!useApi) incrementReelUsage();
+      else refreshUsage();
     } catch (error) {
       console.error(error);
-      alert("Wystąpił błąd podczas generowania rolki. Sprawdź konsolę lub spróbuj ponownie.");
+      const msg = error instanceof Error ? error.message : "Wystąpił błąd podczas generowania rolki. Sprawdź konsolę lub spróbuj ponownie.";
+      alert(msg);
     } finally {
       setIsGeneratingReel(false);
     }
   };
 
-  const reelUsage = getReelUsageToday();
+  const reelUsage = useApi && apiUsage
+    ? { used: apiUsage.reelsUsed, limit: apiUsage.reelsLimit, date: new Date().toISOString().slice(0, 10) }
+    : getReelUsageToday();
 
   const handleReset = () => {
     // Only ask for confirmation if there is data to lose
@@ -289,14 +349,22 @@ const App: React.FC = () => {
       : img.prompt.trim();
     setRegeneratingId(img.id);
     try {
-      const url = await generateImage(
-        effectivePrompt,
-        AppMode.PRODUCT_PLACEMENT,
-        ratioId,
-        productImage,
-        enhancements,
-        resolution
-      );
+      const url = useApi
+        ? await apiGenerateImage({
+            prompt: effectivePrompt,
+            aspectRatio: ratioId,
+            productImageBase64: productImage,
+            enhancements,
+            imageSize: resolution,
+          })
+        : await generateImage(
+            effectivePrompt,
+            AppMode.PRODUCT_PLACEMENT,
+            ratioId,
+            productImage,
+            enhancements,
+            resolution
+          );
       const updated: GeneratedImage = {
         ...img,
         url,
@@ -304,9 +372,11 @@ const App: React.FC = () => {
       };
       setHistory(prev => prev.map(item => (item.id === img.id ? updated : item)));
       if (currentImage?.id === img.id) setCurrentImage(updated);
+      if (useApi) refreshUsage();
     } catch (error) {
       console.error(error);
-      alert("Wystąpił błąd podczas ponownego generowania. Sprawdź konsolę lub spróbuj ponownie.");
+      const msg = error && typeof error === 'object' && 'message' in error ? String((error as { message: string }).message) : '';
+      if (msg) alert(msg); else alert("Wystąpił błąd podczas ponownego generowania. Sprawdź konsolę lub spróbuj ponownie.");
     } finally {
       setRegeneratingId(null);
     }
@@ -397,10 +467,30 @@ const App: React.FC = () => {
             </h1>
           </div>
           <div className="flex items-center gap-4 text-sm font-medium text-slate-400">
-            <span className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-              Gemini 3 Pro Image
-            </span>
+            {useApi && apiUsage && (
+              <>
+                <span title="Images today">Images: {apiUsage.imagesUsed}/{apiUsage.imagesLimit}</span>
+                <span title="Reels today">Reels: {apiUsage.reelsUsed}/{apiUsage.reelsLimit}</span>
+                {apiUsage.trialEnded ? (
+                  <span className="text-red-400">Trial ended</span>
+                ) : apiUsage.trialEndsAt ? (
+                  <span title="Trial ends">Trial: {Math.max(0, Math.ceil((new Date(apiUsage.trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))} days left</span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-600 transition-colors"
+                >
+                  Logout
+                </button>
+              </>
+            )}
+            {(!useApi || !apiUsage) && (
+              <span className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                Gemini 3 Pro Image
+              </span>
+            )}
           </div>
         </div>
       </header>

@@ -1,0 +1,117 @@
+[
+  {
+    "title": "[Infra] Przygotowanie VPS Hetzner pod Node i Nginx",
+    "description": "Skonfigurowanie świeżej maszyny (Ubuntu/Debian): aktualizacje, użytkownik deploy (opcjonalnie), firewall (22, 80, 443), Node.js (LTS) z repozytorium lub nvm.\n\nKryteria akceptacji:\n- SSH działa, Node w wersji LTS dostępny w PATH.\n- Porty 80/443 otwarte, 22 ograniczony do potrzeb.",
+    "labels": ["mvp", "deploy", "infra"]
+  },
+  {
+    "title": "[Infra] Domena i DNS dla app.shotlab.pl oraz api.shotlab.pl",
+    "description": "Ustawienie rekordów A/CNAME w DNS tak, aby app.shotlab.pl i api.shotlab.pl wskazywały na IP VPS Hetzner.\n\nKryteria akceptacji:\n- app.shotlab.pl i api.shotlab.pl rozwiązują się na docelowy serwer.",
+    "labels": ["mvp", "deploy", "infra"]
+  },
+  {
+    "title": "[Infra] SSL (Let's Encrypt) dla app i api",
+    "description": "Instalacja certbota, uzyskanie certyfikatów dla app.shotlab.pl i api.shotlab.pl, automatyczne odnowienie.\n\nKryteria akceptacji:\n- HTTPS działa dla obu subdomen, certyfikat odnawiany automatycznie.",
+    "labels": ["mvp", "deploy", "infra"]
+  },
+  {
+    "title": "[Backend] Deploy backendu na Hetzner (PM2 + env)",
+    "description": "Wdrożenie aplikacji Express z katalogu backend/: skopiowanie plików (lub clone repo), npm install --production, npm run build, konfiguracja .env (API_KEY, SUPABASE_*, FRONTEND_URL), uruchomienie przez PM2 z autostartem.\n\nKryteria akceptacji:\n- Backend działa pod http://127.0.0.1:3001, PM2 restart przy rebootie, zmienne env ustawione.",
+    "labels": ["mvp", "deploy", "backend"]
+  },
+  {
+    "title": "[Infra] Nginx: reverse proxy dla API i serwowanie frontendu",
+    "description": "Konfiguracja Nginx: api.shotlab.pl → proxy do http://127.0.0.1:3001; app.shotlab.pl → root do katalogu z zbudowanym frontendem (np. dist/).\n\nKryteria akceptacji:\n- https://api.shotlab.pl/health zwraca 200 OK.\n- https://app.shotlab.pl serwuje SPA (index.html dla SPA fallback).",
+    "labels": ["mvp", "deploy", "infra"]
+  },
+  {
+    "title": "[Frontend] Build produkcyjny i deploy na Hetzner",
+    "description": "Ustawienie zmiennych produkcyjnych (VITE_API_URL=https://api.shotlab.pl, VITE_SUPABASE_*), npm run build, wgranie zawartości dist/ na VPS do katalogu obsługiwanego przez Nginx.\n\nKryteria akceptacji:\n- Aplikacja pod https://app.shotlab.pl ładuje się i komunikuje z API po HTTPS.",
+    "labels": ["mvp", "deploy", "frontend"]
+  },
+  {
+    "title": "[Supabase] Projekt, schema i Google OAuth w Supabase",
+    "description": "Utworzenie projektu Supabase, uruchomienie skryptu backend/supabase-schema.sql (tabele users, daily_usage), włączenie Google OAuth (Client ID/Secret z GCP), skopiowanie JWT Secret do backendu. W Supabase Redirect URLs dodać https://app.shotlab.pl.\n\nKryteria akceptacji:\n- Logowanie „Sign in with Google” na app.shotlab.pl przekierowuje do Google i po autoryzacji wraca do aplikacji z zalogowanym użytkownikiem.",
+    "labels": ["mvp", "backend", "auth"]
+  },
+  {
+    "title": "[Docs] MVP_README – uzupełnienie o konkretne komendy (PM2, Nginx)",
+    "description": "Rozszerzenie MVP_README.md o gotowe fragmenty konfiguracji Nginx i komendy PM2 (start, restart, logi), aby deploy dało się odtworzyć krok po kroku.\n\nKryteria akceptacji:\n- Ktoś z repo może wdrożyć MVP na nowy VPS według README bez domysłów.",
+    "labels": ["mvp", "docs"]
+  },
+  {
+    "title": "[Legal] Minimum RODO/regulamin przy rejestracji (MVP)",
+    "description": "Dodać krótki tekst (np. checkbox lub link) przy pierwszym logowaniu: zgoda na przetwarzanie danych, link do polityki prywatności/regulaminu. Zgodnie ze specyfikacją: minimum na MVP.\n\nKryteria akceptacji:\n- Użytkownik przed pierwszym użyciem widzi informację/akceptację RODO; treść zatwierdzona przez PO.",
+    "labels": ["mvp", "frontend", "legal"]
+  },
+  {
+    "title": "[QA] Testy E2E / smoke: logowanie, generowanie obrazu, limit",
+    "description": "Przeprowadzenie scenariuszy: wejście na app → logowanie Google → wygenerowanie jednego obrazu → sprawdzenie licznika w headerze → (opcjonalnie) wyczerpanie limitu i komunikat. Udokumentowanie lub dodanie prostego E2E (np. Playwright).\n\nKryteria akceptacji:\n- Scenariusz logowanie → generowanie → limit jest przetestowany i opisany (lub zautomatyzowany).",
+    "labels": ["mvp", "qa"]
+  },
+  {
+    "title": "[Backend] Stripe: produkty i ceny (plany Starter / Pro / Business)",
+    "description": "W Stripe Dashboard utworzenie produktów i cen (miesięczne/roczne) dla planów zgodnych ze specyfikacją. Zapisać price_id w konfiguracji backendu.\n\nKryteria akceptacji:\n- W Stripe istnieją produkty i ceny gotowe do użycia w Checkout Session.",
+    "labels": ["post-mvp", "payments", "backend"]
+  },
+  {
+    "title": "[Backend] Endpoint POST /api/create-checkout-session i webhook Stripe",
+    "description": "Endpoint przyjmujący wybór planu (price_id), tworzący Stripe Checkout Session. Osobny endpoint POST /api/webhooks/stripe z weryfikacją podpisu i obsługą zdarzeń subscription.created/updated/deleted, invoice.paid – aktualizacja tabeli subskrypcji w DB.\n\nKryteria akceptacji:\n- Po wywołaniu create-checkout-session użytkownik może opłacić subskrypcję; webhook aktualizuje stan w bazie.",
+    "labels": ["post-mvp", "payments", "backend"]
+  },
+  {
+    "title": "[Backend] Schema DB: subskrypcje (Stripe customer/subscription ID, plan, status)",
+    "description": "Migracja/rozszerzenie bazy: tabela subscriptions (userId, stripeCustomerId, stripeSubscriptionId, planId, status, currentPeriodEnd, timestamps). Backend przy webhooku zapisuje/aktualizuje rekordy.\n\nKryteria akceptacji:\n- Stan subskrypcji po płatności jest odzwierciedlony w DB i dostępny dla API.",
+    "labels": ["post-mvp", "payments", "backend"]
+  },
+  {
+    "title": "[Backend] GET /api/subscription i egzekwowanie limitów według planu",
+    "description": "Endpoint zwracający aktualny plan użytkownika i limity. Przed generowaniem obrazu/rolki i remove-background backend sprawdza limity z planu; przy przekroczeniu zwraca 403 z czytelnym komunikatem.\n\nKryteria akceptacji:\n- Frontend może wyświetlić plan i limity; generowanie blokowane po przekroczeniu z jasnym komunikatem.",
+    "labels": ["post-mvp", "payments", "backend"]
+  },
+  {
+    "title": "[Frontend] Strona cennika i przycisk „Kup” (Stripe Checkout)",
+    "description": "Ekran/sekcja z opisem planów i cenami, przycisk „Kup” przekierowujący na Stripe Checkout. Po powrocie z success_url odświeżenie danych subskrypcji (GET /api/subscription).\n\nKryteria akceptacji:\n- Użytkownik może wybrać plan, przejść do Stripe, zapłacić i wrócić do aplikacji z aktywnym planem.",
+    "labels": ["post-mvp", "payments", "frontend"]
+  },
+  {
+    "title": "[Frontend] Licznik kredytów w headerze (zgodny z planem)",
+    "description": "W headerze wyświetlanie aktualnego limitu i zużycia na podstawie GET /api/subscription i GET /api/usage. Przy wyczerpaniu – komunikat i modal z zachętą do zakupu/zmiany planu.\n\nKryteria akceptacji:\n- Licznik odzwierciedla plan i usage; przy braku kredytów widoczna jest jasna zachęta do płatności.",
+    "labels": ["post-mvp", "payments", "frontend"]
+  },
+  {
+    "title": "[Frontend] Link „Zarządzaj subskrypcją” (Stripe Customer Portal)",
+    "description": "Backend generuje link do Stripe Customer Portal; frontend wyświetla przycisk/link „Zarządzaj subskrypcją” otwierający ten link w nowej karcie.\n\nKryteria akceptacji:\n- Użytkownik może zmienić plan, anulować subskrypcję i pobrać faktury przez Stripe.",
+    "labels": ["post-mvp", "payments", "frontend"]
+  },
+  {
+    "title": "[Backend] Kolejka zadań (Bull + Redis) dla generowania rolek",
+    "description": "Zamiast synchronicznego wywołania Veo: dodanie zadania do kolejki (Bull), worker wywołuje Veo i zapisuje wynik. Endpoint zwraca jobId; frontend może odpytować status lub otrzymać powiadomienie (SSE/WebSocket).\n\nKryteria akceptacji:\n- Generowanie rolki nie blokuje requestu; status jest śledzony; po zakończeniu wynik dostępny dla użytkownika.",
+    "labels": ["post-mvp", "backend", "reels"]
+  },
+  {
+    "title": "[Backend + Frontend] Powiadomienie w aplikacji gdy rolka gotowa (WebSocket lub SSE)",
+    "description": "Po zakończeniu jobu rolki backend wysyła event (WebSocket lub SSE) do zalogowanego użytkownika. Frontend przy otwartej karcie pokazuje powiadomienie że rolka jest gotowa. Tylko przy otwartej karcie.\n\nKryteria akceptacji:\n- Użytkownik z otwartą aplikacją dostaje powiadomienie bez odświeżania strony.",
+    "labels": ["post-mvp", "backend", "frontend", "reels"]
+  },
+  {
+    "title": "[Backend] Archiwum 7 dni (opcjonalnie)",
+    "description": "Zapis wygenerowanych plików (np. Supabase Storage lub S3), zwracanie listy/URLi w API, job czyszczący pliki starsze niż 7 dni.\n\nKryteria akceptacji:\n- Użytkownik widzi listę ostatnich 7 dni; pliki starsze są usuwane.",
+    "labels": ["post-mvp", "backend", "feature"]
+  },
+  {
+    "title": "[Frontend] Wielojęzyczność PL + EN (auto z przeglądarki)",
+    "description": "Wykrywanie locale z przeglądarki (navigator.language), zestaw tłumaczeń (np. i18next lub prosty słownik), przełączanie PL/EN w UI.\n\nKryteria akceptacji:\n- Aplikacja wyświetla teksty w PL lub EN zgodnie z ustawieniem; możliwość ręcznej zmiany języka (opcjonalnie).",
+    "labels": ["post-mvp", "frontend", "i18n"]
+  },
+  {
+    "title": "[Landing] Podstrona aplikacji na shotlab.pl + link do app.shotlab.pl",
+    "description": "Na istniejącym landingu shotlab.pl dodać podstronę opisującą aplikację (co robi, dla kogo, cennik), z przyciskiem/linkiem prowadzącym na https://app.shotlab.pl.\n\nKryteria akceptacji:\n- Odwiedzający shotlab.pl może przejść na podstronę aplikacji i stamtąd do app.shotlab.pl.",
+    "labels": ["post-mvp", "landing", "marketing"]
+  },
+  {
+    "title": "[Docs] Cennik w aplikacji i na landingu (zgodność z planami)",
+    "description": "Ujednolicenie opisu cen i planów w aplikacji oraz na stronie shotlab.pl; aktualizacja przy zmianach w Stripe.\n\nKryteria akceptacji:\n- Cennik w app i na landingu jest spójny z ofertą Stripe.",
+    "labels": ["post-mvp", "docs", "marketing"]
+  }
+]

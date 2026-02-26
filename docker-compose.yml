@@ -1,0 +1,30 @@
+# Shotlab MVP – deploy na jednym hoście (np. Hetzner)
+# Frontend (Nginx) serwuje aplikację i proxy /api do backendu.
+
+services:
+  backend:
+    build:
+      context: ./SHOTLAB_AI_TOOL/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      # FRONTEND_URL – adres publiczny aplikacji (CORS), np. https://app.shotlab.pl
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
+    expose:
+      - "3001"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        - VITE_API_URL=
+        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-}
+        - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY:-}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend

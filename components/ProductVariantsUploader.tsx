@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { removeBackground } from '../services/geminiService';
+import { isApiConfigured, getStoredToken, apiRemoveBackground } from '../services/apiClient';
 
 interface ProductVariantsUploaderProps {
   images: string[];
@@ -59,13 +60,15 @@ export const ProductVariantsUploader: React.FC<ProductVariantsUploaderProps> = (
       const img = images[index];
       if (!img) return;
       setProcessingIndex(index);
+      const useApi = isApiConfigured() && Boolean(getStoredToken());
       try {
-        const newImage = await removeBackground(img);
+        const newImage = useApi ? await apiRemoveBackground(img) : await removeBackground(img);
         const nextImages = [...images];
         nextImages[index] = newImage;
         onImagesChange(nextImages);
-      } catch {
-        alert('Wystąpił błąd podczas usuwania tła. Spróbuj ponownie.');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Wystąpił błąd podczas usuwania tła. Spróbuj ponownie.';
+        alert(msg);
       } finally {
         setProcessingIndex(null);
       }

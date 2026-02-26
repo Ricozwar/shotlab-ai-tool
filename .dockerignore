@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.*
+*.log
+.git
+SHOTLAB_AI_TOOL/backend
+.cursor
+.vscode
+*.md
+terminals
