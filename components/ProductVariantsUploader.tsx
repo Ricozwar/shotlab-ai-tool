@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { removeBackground } from '../services/geminiService';
+// Usunięto lokalny import geminiService
 import { isApiConfigured, getStoredToken, apiRemoveBackground } from '../services/apiClient';
 
 interface ProductVariantsUploaderProps {
@@ -62,7 +62,7 @@ export const ProductVariantsUploader: React.FC<ProductVariantsUploaderProps> = (
       setProcessingIndex(index);
       const useApi = isApiConfigured() && Boolean(getStoredToken());
       try {
-        const newImage = useApi ? await apiRemoveBackground(img) : await removeBackground(img);
+        const newImage = await apiRemoveBackground(img);
         const nextImages = [...images];
         nextImages[index] = newImage;
         onImagesChange(nextImages);

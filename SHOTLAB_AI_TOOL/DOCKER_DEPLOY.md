@@ -1,118 +1,99 @@
-# Deploy MVP w Dockerze (Hetzner)
+# Wdrożenie MVP (Vercel + Hetzner/Render)
 
-Aplikacja działa w dwóch kontenerach: **backend** (Node/Express) i **frontend** (Nginx + zbudowany Vite). Nginx serwuje aplikację i przekierowuje `/api` do backendu.
+Dla maksymalnego uproszczenia procesu wdrożenia i obniżenia kosztów, aplikacja została podzielona na nowoczesne usługi PaaS oraz prosty serwer backendowy.
 
----
+## Architektura wdrożenia
 
-## Wymagania na serwerze
-
-- **Docker** i **Docker Compose**
-- Dostęp SSH (np. `root@IP`)
-
----
-
-## 1. Przygotowanie Supabase i zmiennych
-
-Zrób wszystko z sekcji „1. Baza i auth” w [MVP_README.md](./MVP_README.md): projekt Supabase, schema, Google OAuth, JWT Secret.
+- **Frontend (React/Vite):** [Vercel](https://vercel.com) (lub Cloudflare Pages) – automatyczny deploy, darmowy SSL i CDN.
+- **Backend (Node.js/Express):** Serwer VPS (np. Hetzner) w kontenerze Docker lub darmowa usługa [Render](https://render.com).
+- **Baza danych i Autoryzacja:** [Supabase](https://supabase.com) Cloud – darmowy poziom (Free Tier) w zupełności wystarczy dla MVP.
 
 ---
 
-## 2. Kod na serwerze
+## 1. Baza i Auth (Supabase)
 
-Na serwerze (np. w `/opt/shotlab` lub w katalogu użytkownika) musisz mieć cały repozytorium (frontend + `SHOTLAB_AI_TOOL/backend`). Możesz:
-
-- **Sklonować repo**, albo  
-- **Wgrać pliki** (np. `scp` / `rsync` z komputera).
-
-Struktura na serwerze:
-
-```
-/opt/shotlab/
-  docker-compose.yml
-  Dockerfile.frontend
-  .dockerignore
-  .env                    ← utworzysz w kroku 3
-  docker/
-    nginx.conf
-  (pliki frontendu: package.json, src, index.html, vite.config.ts, itd.)
-  SHOTLAB_AI_TOOL/
-    backend/
-      Dockerfile
-      package.json
-      src/
-      ...
-```
+Zrób wszystko z sekcji „1. Baza i auth” w [MVP_README.md](./MVP_README.md):
+- Załóż projekt na Supabase
+- Wgraj schemat bazy
+- Skonfiguruj Google OAuth
+- Skopiuj klucze (URL, Anon Key, Service Role Key, JWT Secret)
 
 ---
 
-## 3. Plik `.env` na serwerze
+## 2. Wdrożenie Frontendu (Vercel)
 
-W katalogu z `docker-compose.yml` utwórz `.env` (np. `nano .env`) z zawartością:
+Zamiast budować kontenery Docker, frontend jest wdrażany bezpośrednio na Vercel z GitHuba:
+
+1. Zaloguj się na [Vercel.com](https://vercel.com).
+2. Dodaj nowy projekt ("Add New..." -> "Project") i wybierz repozytorium z GitHub.
+3. W sekcji **Environment Variables** dodaj:
+   - `VITE_API_URL` (np. `https://api.twojadomena.pl` lub URL z Render, dla lokalnego testowania: `http://localhost:3001`)
+   - `VITE_SUPABASE_URL` (z Supabase)
+   - `VITE_SUPABASE_ANON_KEY` (z Supabase)
+4. Kliknij **Deploy**. Vercel sam zainstaluje zależności, zbuduje projekt i opublikuje pod publicznym adresem URL z certyfikatem SSL.
+5. (Opcjonalnie) W ustawieniach domeny w Vercel podepnij własną domenę (np. `app.shotlab.pl`).
+6. **Ważne:** Dodaj uzyskany adres URL do "Redirect URLs" w konfiguracji uwierzytelniania w Supabase.
+
+---
+
+## 3. Wdrożenie Backendu (Hetzner VPS z Docker)
+
+Jeśli chcesz używać VPS (np. Hetzner), backend będzie działał w kontenerze Docker. 
+
+Na serwerze (np. w `/opt/shotlab` lub w katalogu użytkownika):
+
+1. Sklonuj repozytorium lub prześlij pliki (m.in. `docker-compose.yml` oraz katalog `SHOTLAB_AI_TOOL/backend`).
+2. Utwórz plik `.env` obok pliku `docker-compose.yml`:
 
 ```env
-# Backend (wymagane do działania API)
+# Klucz API Google (Gemini)
 API_KEY=twój_klucz_google_ai
+
+# Połączenie z Supabase
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJ...
 SUPABASE_JWT_SECRET=twój_jwt_secret_z_supabase
 
-# Adres publiczny aplikacji (CORS) – po ustawieniu domeny zmień na https://app.shotlab.pl
-FRONTEND_URL=http://188.245.89.46
-
-# Opcjonalnie: do buildu frontendu (Supabase – logowanie Google)
-VITE_SUPABASE_URL=https://xxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJ...
+# Adres publiczny frontendu (CORS) – niezbędne, by przeglądarka nie blokowała zapytań
+FRONTEND_URL=https://app.shotlab.pl
 ```
 
-Po skonfigurowaniu domeny i SSL ustaw `FRONTEND_URL=https://app.shotlab.pl` i w Supabase dodaj ten URL do Redirect URLs.
-
----
-
-## 4. Uruchomienie
-
-Na serwerze, w katalogu z `docker-compose.yml`:
+3. Uruchom kontener:
 
 ```bash
 docker compose build
 docker compose up -d
 ```
 
-Aplikacja będzie dostępna na **porcie 80** (np. `http://188.245.89.46`). Backend nie jest wystawiony na zewnątrz – dostęp tylko przez Nginx (`/api`).
+Backend działa na porcie 3001. 
+
+### Udostępnianie Backendu na zewnątrz (Nginx + SSL)
+Jeżeli używasz VPS, aby podpiąć domenę (np. `api.shotlab.pl`) i wygenerować certyfikat SSL dla backendu:
+1. Skonfiguruj Nginx (na głównym systemie VPS) jako reverse proxy do portu `3001`.
+2. Wygeneruj certyfikat za pomocą Let's Encrypt (Certbot).
+3. Przypisz URL (np. `https://api.shotlab.pl`) do zmiennej `VITE_API_URL` we wdrożeniu frontendu (Vercel).
 
 ---
 
-## 5. Domena i SSL (opcjonalnie)
+## Alternatywa: Całkowicie bezserwerowy backend (Render.com)
 
-Gdy masz domenę (np. `app.shotlab.pl` → IP serwera):
-
-1. Zamiast serwować na porcie 80 z poziomu Docker, możesz postawić **Nginx (host)** z SSL (certbot) i proxy do `http://127.0.0.1:80` (kontener frontend), albo  
-2. Przekierować port 80 w firewallu na kontener i SSL zrobić wewnątrz kontenera (wymaga osobnej konfiguracji Nginx z certyfikatem).
-
-Prościej: Nginx na hoście z certbotem, proxy do `localhost:80` (kontener).
-
----
-
-## 6. Przydatne komendy
-
-```bash
-# Logi
-docker compose logs -f
-
-# Restart po zmianie .env
-docker compose up -d
-
-# Przebudowa po zmianie kodu
-docker compose build --no-cache
-docker compose up -d
-```
+Jeśli chcesz uniknąć konfiguracji VPS:
+1. Zaloguj się na [Render.com](https://render.com).
+2. Dodaj "Web Service" i wskaż to repozytorium.
+3. Zmień katalog główny ("Root Directory") na `SHOTLAB_AI_TOOL/backend`.
+4. Ustaw polecenia:
+   - Build Command: `npm install && npm run build`
+   - Start Command: `npm run start`
+5. Wklej zmienne środowiskowe z punktu 3. (API_KEY, SUPABASE_URL, itd.).
+6. Po opublikowaniu, wklej uzyskany adres URL serwisu Render do zmiennej `VITE_API_URL` na Vercel. 
+*(Uwaga: na darmowym planie Render aplikacja "zasypia" po 15 min nieaktywności, co wydłuża czas pierwszego odpowiedzi API).*
 
 ---
 
 ## Podsumowanie
 
-| Element        | Opis |
-|----------------|------|
-| Backend        | Kontener Node, port 3001 (wewnętrzny), zmienne z `.env` |
-| Frontend       | Kontener Nginx, port 80 (publiczny), proxy `/api` → backend |
-| `.env` na serwerze | API_KEY, SUPABASE_*, FRONTEND_URL, opcjonalnie VITE_SUPABASE_* |
-| Supabase       | Schema, Google OAuth, JWT Secret – jak w MVP_README |
+| Element | Gdzie hostowane? | Utrzymanie | Koszt |
+|---|---|---|---|
+| Frontend | Vercel | Auto-deploy po każdym commit'cie (Git push) | $0 |
+| Backend | VPS Hetzner / Render | Docker (Hetzner) / Auto-deploy (Render) | od ok. 4 EUR (VPS) lub $0 (Render) |
+| Baza / Auth | Supabase Cloud | Pełne zarządzanie przez chmurę | $0 |

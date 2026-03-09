@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { removeBackground } from '../services/geminiService';
+// Usunięto lokalny import geminiService
 import { isApiConfigured, getStoredToken, apiRemoveBackground } from '../services/apiClient';
 
 interface ImageUploaderProps {
@@ -58,7 +58,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, s
     const useApi = isApiConfigured() && Boolean(getStoredToken());
     setIsProcessing(true);
     try {
-      const newImage = useApi ? await apiRemoveBackground(selectedImage) : await removeBackground(selectedImage);
+      const newImage = await apiRemoveBackground(selectedImage);
       onImageSelected(newImage);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Wystąpił błąd podczas usuwania tła. Spróbuj ponownie.";

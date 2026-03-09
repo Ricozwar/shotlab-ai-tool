@@ -8,7 +8,14 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/drive/1XiBeElOJAvwKEIPdddO2veMeEKcxA-50
 
-## Run Locally
+## Deploy
+
+Wdrożenie aplikacji jest zoptymalizowane pod kątem usług PaaS:
+- **Frontend:** [Vercel](https://vercel.com) (zero-config, auto-deploy z GitHuba).
+- **Backend:** Serwer VPS (Docker) lub usługa webowa [Render](https://render.com).
+- **Baza/Auth:** Supabase Cloud.
+
+Pełny opis wdrożenia MVP znajduje się w pliku: [SHOTLAB_AI_TOOL/DOCKER_DEPLOY.md](SHOTLAB_AI_TOOL/DOCKER_DEPLOY.md).
 
 **Prerequisites:**  Node.js
 

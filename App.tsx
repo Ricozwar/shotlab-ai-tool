@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { generateImage } from './services/geminiService';
-import { generateReel } from './services/veoService';
+// Usunięto lokalne importy AI (geminiService, veoService) zgodnie z architekturą PaaS
 import {
   isApiConfigured,
   getStoredToken,
@@ -135,22 +134,13 @@ const App: React.FC = () => {
 
       const promises = tasks.map(async (task) => {
         try {
-          const url = useApi
-            ? await apiGenerateImage({
+          const url = await apiGenerateImage({
                 prompt: effectivePrompt,
                 aspectRatio: task.ratio,
                 productImageBase64: productImages[task.variantIndex],
                 enhancements,
                 imageSize: resolution,
-              })
-            : await generateImage(
-                effectivePrompt,
-                AppMode.PRODUCT_PLACEMENT,
-                task.ratio,
-                productImages[task.variantIndex],
-                enhancements,
-                resolution
-              );
+              });
           return { status: 'fulfilled' as const, value: url, ...task };
         } catch (error) {
           return { status: 'rejected' as const, reason: error, ...task };
@@ -275,17 +265,15 @@ const App: React.FC = () => {
         alert("Daily reel limit reached. Try again tomorrow.");
         return;
       }
-    } else if (!useApi && !canGenerateReel()) {
-      alert("Dzienny limit rolek (3) został wykorzystany. Spróbuj jutro.");
+    if (!useApi && !canGenerateReel()) {
+      alert("Zaloguj się, aby generować rolki (brak połączenia z API).");
       return;
     }
     setIsGeneratingReel(true);
     setReelVideoUrl(null);
     try {
       const firstFrame = reelSourceImage?.url ?? (useFirstFrameForReel ? (currentImage?.url ?? productImages[0]) : null);
-      const url = useApi
-        ? await apiGenerateReel(reelPrompt.trim(), firstFrame ?? undefined)
-        : await generateReel(reelPrompt.trim(), firstFrame ?? undefined);
+      const url = await apiGenerateReel(reelPrompt.trim(), firstFrame ?? undefined);
       setReelVideoUrl(url);
       if (!useApi) incrementReelUsage();
       else refreshUsage();
@@ -349,22 +337,13 @@ const App: React.FC = () => {
       : img.prompt.trim();
     setRegeneratingId(img.id);
     try {
-      const url = useApi
-        ? await apiGenerateImage({
+      const url = await apiGenerateImage({
             prompt: effectivePrompt,
             aspectRatio: ratioId,
             productImageBase64: productImage,
             enhancements,
             imageSize: resolution,
-          })
-        : await generateImage(
-            effectivePrompt,
-            AppMode.PRODUCT_PLACEMENT,
-            ratioId,
-            productImage,
-            enhancements,
-            resolution
-          );
+          });
       const updated: GeneratedImage = {
         ...img,
         url,
